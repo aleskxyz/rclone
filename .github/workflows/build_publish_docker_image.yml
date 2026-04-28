@@ -10,7 +10,7 @@ on:
     branches:
       - '**'
     tags:
-      - '**'
+      - 'v*-*'
   workflow_dispatch:
     inputs:
       manual:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build-image:
-    if: inputs.manual || (github.repository == 'rclone/rclone' && github.event_name != 'pull_request')
+    if: inputs.manual || github.event_name != 'workflow_dispatch'
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -32,13 +32,7 @@ jobs:
         include:
           - platform: linux/amd64
             runs-on: ubuntu-24.04
-          - platform: linux/386
-            runs-on: ubuntu-24.04
           - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-          - platform: linux/arm/v7
-            runs-on: ubuntu-24.04-arm
-          - platform: linux/arm/v6
             runs-on: ubuntu-24.04-arm
 
     name: Build Docker Image for ${{ matrix.platform }}
@@ -199,6 +193,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - build-image
+    if: github.event_name != 'pull_request'
 
     steps:
       - name: Download Image Digests
@@ -219,7 +214,6 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
           images: |
-            ${{ env.REPO_NAME }}
             ghcr.io/${{ env.REPO_NAME }}
           labels: |
             org.opencontainers.image.url=https://github.com/rclone/rclone/pkgs/container/rclone
@@ -267,12 +261,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -293,6 +281,5 @@ jobs:
 
       - name: Inspect and Run Multi-Platform Image
         run: |
-          docker buildx imagetools inspect --raw ${{ env.REPO_NAME }}:${{ steps.meta.outputs.version }}
           docker buildx imagetools inspect --raw ghcr.io/${{ env.REPO_NAME }}:${{ steps.meta.outputs.version }}
           docker run --rm ghcr.io/${{ env.REPO_NAME }}:${{ steps.meta.outputs.version }} version
