@@ -1429,6 +1429,40 @@ which does not respect [`--ignore-case`](/filtering/#ignore-case-make-searches-c
 - on remotes that do not support server-side move, `--fix-case` will require
 downloading the file and re-uploading it. To avoid this, do not use `--fix-case`.
 
+### --fronting-domains stringArray
+
+Comma-separated hostname patterns eligible for domain fronting.
+
+Supported patterns are exact hosts (for example `example.com`) and
+subdomain wildcards with `*.` (for example `*.googleapis.com`).
+Unmatched hosts are never fronted.
+
+Requires `--fronting-enable`.
+
+### --fronting-enable
+
+Enable opt-in HTTP domain fronting in the shared transport.
+
+When enabled, requests are fronted only if their logical destination
+matches `--fronting-domains`.
+
+### --fronting-sni string
+
+Optional TLS SNI override for fronted requests.
+
+If not set, SNI defaults to the `--fronting-target` hostname.
+Use a hostname value.
+
+Requires `--fronting-enable`.
+
+### --fronting-target string
+
+Fronting target hostname used for network dial.
+
+The original request port is preserved.
+
+Requires `--fronting-enable`.
+
 ### --fs-cache-expire-duration Duration
 
 When using rclone via the API rclone caches created remotes for 5
