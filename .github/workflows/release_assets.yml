@@ -1,0 +1,98 @@
+name: Build and Upload Release Assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish assets for
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-assets:
+    name: Build release archives
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name || github.ref }}
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '~1.25.9'
+          check-latest: true
+
+      - name: Install release tooling
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Set tag
+        shell: bash
+        run: |
+          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            echo "REL_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+          elif [[ -n "${{ github.event.release.tag_name }}" ]]; then
+            echo "REL_TAG=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          else
+            echo "REL_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build archives
+        shell: bash
+        run: |
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          go run bin/cross-compile.go -release current -include '^((linux|darwin)/(amd64|arm64)|windows/amd64)$' "${REL_TAG}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rclone-release-assets
+          path: |
+            build/rclone-${{ env.REL_TAG }}-*.zip
+            build/rclone-${{ env.REL_TAG }}-*.deb
+            build/rclone-${{ env.REL_TAG }}-*.rpm
+            build/*.txt
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release Assets
+    runs-on: ubuntu-latest
+    needs: build-assets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: build
+          merge-multiple: true
+
+      - name: Publish or update release with assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.event.release.tag_name || github.ref_name }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" \
+            build/rclone-${TAG}-*.zip \
+            build/rclone-${TAG}-*.deb \
+            build/rclone-${TAG}-*.rpm \
+            build/version.txt \
+            --clobber
